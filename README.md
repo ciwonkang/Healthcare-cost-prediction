@@ -23,6 +23,6 @@ The analysis estimates:
 
 Click below to view the interactive HTML report.
 
-https://ciwonkang.github.io/healthcare-cost-prediction/Project3.html
+https://ciwonkang.github.io/Healthcare-cost-prediction/Project3.html
 
 
