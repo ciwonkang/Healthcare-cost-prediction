@@ -1,0 +1,319 @@
+---
+title: "Healthcare Cost Prediction"
+author: "Ciwon Kang"
+date: "2026-06-30"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    code_folding: hide
+    theme: cosmo
+    css: style.css
+  pdf_document:
+    toc: true
+    toc_depth: '4'
+  word_document:
+    toc: true
+    toc_depth: '4'
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## ***1) Overview***
+Healthcare costs vary across individuals due to differences in demographic and lifestyle characteristics. Predicting healthcare costs is important for insurers when assessing financial risk and estimating expected medical expenditures.
+
+This project develops a healthcare cost prediction model using a health insurance dataset. Two statistical models are used throughout the analysis:
+
+- Logistic Regression to estimate the **probability** of an insurance claim.
+- Gamma Generalized Linear Model (GLM) to estimate healthcare **costs** for individuals with an insurance claim.
+
+The predicted claim probability and healthcare cost are then combined to estimate an **expected healthcare cost** for each individual.
+
+
+## ***2) Data Exploration***
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(MASS)
+
+health <- read.csv("insurance.csv")
+health$sex <- factor(
+  health$sex,
+  levels = c(0, 1),
+  labels = c("female", "male")
+)
+
+health$smoker <- factor(
+  health$smoker,
+  levels = c(0, 1),
+  labels = c("no", "yes")
+)
+
+health$region <- factor(
+  health$region,
+  levels = c(0, 1, 2, 3)
+)
+```
+
+
+The dataset contains demographic and lifestyle information for each individual, along with annual medical charges. The structure and summary statistics are examined to confirm the variable types, identify potential data quality issues, and understand the overall characteristics of the dataset.
+
+
+```{r, results='hide'}
+str(health) 
+summary(health) 
+head(health)
+```
+
+
+### **2.1 Variables**
+**Response Variables:**
+
+- `insuranceclaim`: Insurance claim indicator used as the response variable for Logistic Regression  
+  - 0 = No Claim  
+  - 1 = Claim
+- `charges`: Individual medical expenses used as the response variable for the Gamma GLM
+
+**Predictor Variables:**
+
+- `age`: Age of the individual
+- `sex`: Sex of the individual
+- `bmi`: Body mass index
+- `children`: Number of dependent children
+- `smoker`: Smoking status
+- `region`: Residential region
+
+
+
+
+### **2.2 Distribution of Medical Costs**
+
+```{r}
+hist(health$charges,
+     main = "Distribution of Medical Costs",
+     xlab = "Medical Cost",
+     ylab = "Frequency")
+```
+**Observation:**<br>
+Medical costs are strongly right-skewed. Most individuals incur relatively low healthcare expenses, while a small number of individuals have substantially higher medical costs. This distribution suggests that modeling approaches designed for positive and right-skewed responses should be considered.
+
+
+
+
+### **2.3 Distribution of Insurance Claims**
+
+```{r}
+claim_counts <- table(health$insuranceclaim)
+
+barplot(claim_counts,
+        main = "Distribution of Insurance Claims",
+        xlab = "Insurance Claim",
+        ylab = "Number of Individuals",
+        names.arg = c("No Claim", "Claim"))
+```
+
+```{r}
+mean(health$insuranceclaim)
+```
+**Observation:**<br>
+The response variable for the classification model is `insuranceclaim`, where 0 indicates no insurance claim and 1 indicates an insurance claim. Approximately **58.5%** of individuals have an insurance claim, indicating that both classes are reasonably represented in the dataset.
+
+
+
+
+### **2.4 Summary Statistics**
+
+```{r}
+summary(health)
+```
+**Observation:**<br>
+The dataset includes **1,338** individuals ranging in age from **18 to 64** years. The average BMI is **30.66**, indicating that many individuals are overweight or obese. Approximately **20.5%** of individuals are smokers, while **58.5%** have an insurance claim. Healthcare costs vary substantially, ranging from **$1,122** to **$63,770**, suggesting considerable variability in medical expenditures.
+
+
+
+
+## ***3) Model 1 : Logistic Regression***
+### **3.1 Model Fitting**
+
+Logistic Regression is first used to estimate the probability that an individual will have an insurance claim. Since the response variable (`insuranceclaim`) is binary (0 = No Claim, 1 = Claim), logistic regression is an appropriate model for estimating claim probabilities.
+
+```{r}
+model1 <- glm(
+  insuranceclaim ~ age + sex + bmi + children + smoker + region,
+  family = binomial(link = "logit"),
+  data = health
+)
+
+summary(model1)
+```
+**Observation:**<br>
+Logistic Regression models the relationship between individual characteristics and the probability of an insurance claim. The estimated probabilities from this model will later be combined with the Gamma GLM predictions to estimate expected healthcare costs.
+
+
+
+### **3.2 Confusion Matrix and Accuracy**
+
+```{r}
+pred_prob <- predict(model1, type = "response")
+pred_class <- ifelse(pred_prob >= 0.5, 1, 0)
+
+table(
+  Actual = health$insuranceclaim,
+  Predicted = pred_class
+)
+```
+
+```{r}
+mean(pred_class == health$insuranceclaim)
+```
+**Observation:**<br>
+Predicted probabilities of 0.5 or greater were classified as insurance claims, while lower probabilities were classified as non-claims. The confusion matrix compares the predicted and observed insurance claim status. The overall classification accuracy summarizes the proportion of individuals whose claim status was correctly classified by the Logistic Regression model.
+
+
+
+
+
+### **3.3 Interpretation**
+
+The logistic regression model achieved an overall classification accuracy of 88.7%, indicating that it distinguishes well between individuals with and without insurance claims. Age, BMI, and smoking status were associated with a higher probability of an insurance claim, while individuals with more children were less likely to file a claim. Sex was not a statistically significant predictor.
+
+
+
+
+
+## ***4) Model 2 : Gamma GLM***
+### **4.1 Model Fitting**
+
+Although Logistic Regression estimates the probability of an insurance claim, it does not predict the amount of healthcare costs. Gamma GLM is used to model medical expenditures because healthcare costs are positive and typically right-skewed. To model claim severity, only individuals with an insurance claim are included in the analysis.
+
+```{r}
+health_claim <- subset(health, insuranceclaim == 1)
+
+model2 <- glm(
+  charges ~ age + sex + bmi + children + smoker + region,
+  family = Gamma(link = "log"),
+  data = health_claim
+)
+
+summary(model2)
+```
+**Observation:**<br>
+Gamma GLM models the expected healthcare cost for individuals with an insurance claim. Using a log link ensures positive predicted costs and provides a flexible framework for modeling right-skewed medical expenditures.
+
+
+
+### **4.2 Actual vs Predicted Costs**
+
+```{r}
+plot(
+  predict(model2, type = "response"),
+  health_claim$charges,
+  main = "Model 2: Gamma GLM",
+  xlab = "Predicted",
+  ylab = "Actual",
+  pch = 16
+)
+
+abline(a = 0, b = 1, col = "red", lwd = 2)
+```
+**Observation:**<br>
+The predicted healthcare costs generally increase as the observed healthcare costs increase, indicating that the Gamma GLM captures the overall trend in the data. Greater variability is observed among individuals with higher medical expenses, but the model provides positive predictions that are appropriate for the right-skewed distribution of healthcare costs.
+
+
+
+
+
+
+### **4.3 Interpretation**
+
+The Gamma GLM indicates that healthcare costs tend to increase with age, BMI, number of children, and smoking status among individuals with an insurance claim. Smoking status has the strongest positive association with healthcare costs, while sex is not a statistically significant predictor. Overall, the model is appropriate for estimating positive and right-skewed healthcare expenditures.<br>
+Interestingly, the number of children has opposite coefficient signs in the two models. While it is associated with a lower probability of an insurance claim in the Logistic Regression model, it is associated with higher healthcare costs conditional on a claim in the Gamma GLM. This reflects that claim frequency and claim severity capture different aspects of healthcare utilization.
+
+
+
+## ***5) Expected Healthcare Cost***
+### **5.1 Expected Cost Calculation**
+
+The expected healthcare cost is calculated by combining the predicted probability of an insurance claim from the Logistic Regression model with the predicted healthcare cost from the Gamma GLM.
+
+```{r}
+health$ClaimProbability <- predict(model1, newdata=health, type = "response")
+
+health$PredictedCost <- predict(model2, newdata=health, type = "response")
+
+health$ExpectedCost <-
+  health$ClaimProbability * health$PredictedCost
+
+head(
+  health[, c("ClaimProbability",
+             "PredictedCost",
+             "ExpectedCost")]
+)
+```
+```{r}
+library(knitr)
+
+interpretation <- data.frame(
+  `Claim Probability` = c("High", "High", "Low", "Low"),
+  `Predicted Cost` = c("High", "Low", "High", "Low"),
+  `Expected Cost` = c("High", "Moderate", "Low–Moderate", "Low"),
+  Interpretation = c(
+    "High likelihood of a claim with expensive medical costs.",
+    "Claims are likely, but expected medical costs are relatively low.",
+    "Claims are unlikely, but when they occur, medical costs are expected to be high.",
+    "Low likelihood of a claim and relatively low expected medical costs."
+  )
+)
+
+kable(
+  interpretation,
+  caption = "Interpretation of Expected Healthcare Cost"
+)
+```
+**Observation:**<br>
+The expected healthcare cost combines the predicted probability of an insurance claim with the estimated healthcare cost conditional on a claim. This provides an overall estimate of the expected annual healthcare cost for each individual.
+
+
+
+
+### **5.2 Risk Classification**
+
+```{r}
+health$RiskGroup <- cut(
+  health$ExpectedCost,
+  breaks = quantile(
+    health$ExpectedCost,
+    probs = c(0, 1/3, 2/3, 1)
+  ),
+  include.lowest = TRUE,
+  labels = c("Low", "Medium", "High")
+)
+
+table(health$RiskGroup)
+
+barplot(
+  table(health$RiskGroup),
+  main = "Predicted Risk Groups",
+  xlab = "Risk Group",
+  ylab = "Number of Individuals"
+)
+```
+**Observation:**<br>
+Individuals are divided into low-, medium-, and high-risk groups based on the tertiles of their predicted expected healthcare costs. This provides a simple relative ranking of individuals according to their predicted healthcare risk.
+
+
+
+
+
+
+## ***6) Conclusion***
+
+This project developed a two-part healthcare cost prediction model using Logistic Regression and a Gamma GLM.<br>
+
+**Logistic Regression** estimated the probability of an insurance claim, while the **Gamma GLM** estimated healthcare costs conditional on a claim. The predicted claim probabilities and conditional healthcare costs were then combined to estimate the expected healthcare cost for each individual.<br>
+
+Finally, individuals were classified into low, medium, and high risk groups based on their predicted expected healthcare costs. Overall, this project demonstrates how a two-part modeling approach can be used to estimate expected healthcare costs for individuals.
