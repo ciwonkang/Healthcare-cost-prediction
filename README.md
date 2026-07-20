@@ -26,3 +26,11 @@ Click below to view the interactive HTML report.
 https://ciwonkang.github.io/Healthcare-cost-prediction/Project3.html
 
 
+
+## References
+
+Dataset:
+Insurance Claim Dataset (Kaggle)
+https://www.kaggle.com/datasets/yasserh/insurance-claim-dataset/
+
+
